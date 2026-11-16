@@ -3,16 +3,25 @@ import { Modal, ScrollView, Text, View } from 'react-native';
 import { excluir, salvar, mensagemErroLocal, type Item, type Modulo, type Dados } from './dados';
 import { Botao, Campo, s } from './interface';
 
+/* API: campos da Open Library usados na tela; autores podem estar ausentes. */
 type Resultado = { key:string; title:string; author_name?:string[] };
+/* DATA: exige DD/MM/AAAA e compara os componentes, rejeitando datas como 31/02. */
 function dataValida(texto:string) {
   if (!/^\d{2}\/\d{2}\/\d{4}$/.test(texto)) return false;
   const [dia, mes, ano] = texto.split('/').map(Number);
   const data = new Date(ano,mes-1,dia);
   return data.getFullYear()===ano && data.getMonth()===mes-1 && data.getDate()===dia;
 }
+/* TELA COMPARTILHADA: modulo seleciona campos; uid identifica a conta; itens/estado
+ * vêm do hook. atualizar solicita releitura e sincronização após mudanças locais.
+ */
 export function ModuloScreen({modulo,uid,itens,atualizar,estado}:{
   modulo:Modulo; uid:string; itens:Item[]; atualizar:()=>void; estado:string
 }) {
+  /* ESTADOS: id distingue edição de inclusão; form guarda campos. Busca e resultados
+   * controlam a API; ocupado/excluindo indicam operações; paraExcluir abre o Modal.
+   * aviso/erroExclusao mostram falhas. useState preserva valores entre renderizações.
+   */
   const [id, setId] = useState<string>();
   const [form, setForm] = useState<Dados>({modulo});
   const [busca,setBusca] = useState('');
@@ -23,12 +32,18 @@ export function ModuloScreen({modulo,uid,itens,atualizar,estado}:{
   const [paraExcluir,setParaExcluir] = useState<Item>();
   const [excluindo,setExcluindo] = useState(false);
   const [erroExclusao,setErroExclusao] = useState('');
+  /* FORMULÁRIO: filter separa listas; alterar mescla campos recebidos com o estado
+   * anterior. Partial aceita parte de Dados. limpar retorna ao cadastro vazio.
+   */
   const livros = itens.filter(i => i.modulo==='Livros');
   const lista = itens.filter(i => i.modulo===modulo);
   const alterar = (dados:Partial<Dados>) => setForm(anterior=>({...anterior,...dados}));
   function limpar() {
     setId(undefined); setForm({modulo}); setResultados([]); setBusca(''); setAviso('');
   }
+  /* BUSCA: fetch envia título codificado e solicita até cinco resultados. ok verifica
+   * HTTP; json lê docs. catch permite cadastro manual; finally encerra carregamento.
+   */
   async function buscar() {
     setBuscando(true); setResultados([]); setAviso('');
     try {
@@ -40,6 +55,9 @@ export function ModuloScreen({modulo,uid,itens,atualizar,estado}:{
     } catch { setAviso('Busca indisponível. Preencha título e autor manualmente.'); }
     finally { setBuscando(false); }
   }
+  /* SALVAR: valida campos por módulo e livro vinculado, monta dados e grava no SQLite.
+   * Sucesso limpa/atualiza a tela; catch mostra erro e finally libera o botão.
+   */
   async function gravar() {
     let dados:Dados;
     if (modulo==='Livros') {
@@ -61,9 +79,13 @@ export function ModuloScreen({modulo,uid,itens,atualizar,estado}:{
     catch (erro) { setAviso(mensagemErroLocal(erro)); }
     finally { setOcupado(false); }
   }
+  /* PEDIDO DE EXCLUSÃO: seleciona o item e abre o Modal; ainda não altera o banco. */
   function confirmar(item:Item) {
     setErroExclusao(''); setParaExcluir(item);
   }
+  /* CONFIRMAÇÃO: evita duplicação, exclui localmente e atualiza a lista. Limpa edição
+   * se o registro ou seu livro foi removido. Falha mantém o Modal com mensagem.
+   */
   async function remover() {
     if (!paraExcluir || excluindo) return;
     setExcluindo(true); setErroExclusao('');
@@ -74,7 +96,12 @@ export function ModuloScreen({modulo,uid,itens,atualizar,estado}:{
     } catch (erro) { setErroExclusao(mensagemErroLocal(erro)); }
     finally { setExcluindo(false); }
   }
+  /* JSX: ScrollView permite rolagem; View agrupa; Text desenha textos. Botao/Campo são
+   * reutilizáveis. Fragmentos <>...</> agrupam elementos sem contêiner extra.
+   */
   return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.pagina}>
+    {/* Modal: visible depende do item; onRequestClose trata fechamento pelo sistema.
+        Cancelar preserva o registro. A confirmação funciona também no navegador. */}
     <Modal visible={!!paraExcluir} transparent animationType="fade"
       onRequestClose={()=>{if (!excluindo) setParaExcluir(undefined);}}>
       <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.45)',justifyContent:'center',alignItems:'center',padding:20}}>
@@ -89,6 +116,8 @@ export function ModuloScreen({modulo,uid,itens,atualizar,estado}:{
       </View>
     </Modal>
     <Text>{estado}</Text><Text style={s.titulo}>{id ? 'Editar registro' : 'Novo registro'}</Text>
+    {/* Livros: value/onChangeText ligam campos ao estado. Resultados preenchem
+        título e autor; ainda é necessário salvar. Condições selecionam o módulo. */}
     {modulo==='Livros' ? <>
       <Campo nome="Buscar na Open Library" value={busca} onChangeText={setBusca}/>
       <Botao secundario nome={buscando?'Buscando…':'Buscar título'} bloqueado={buscando || !busca.trim()} acao={buscar}/>
@@ -97,6 +126,8 @@ export function ModuloScreen({modulo,uid,itens,atualizar,estado}:{
       <Campo nome="Título" value={form.titulo ?? ''} onChangeText={titulo=>alterar({titulo})}/>
       <Campo nome="Autor" value={form.autor ?? ''} onChangeText={autor=>alterar({autor})}/>
     </> : <>
+      {/* Vínculo por livroId; Campo recebe data; map cria notas de 1 a 5.
+          multiline permite comentário com várias linhas; maxLength limita entrada. */}
       <Text>Livro</Text>
       {!livros.length && <Text>Cadastre um livro no menu Livros para começar.</Text>}
       {livros.map(l=><Botao nome={l.titulo+' · '+l.autor} secundario={form.livroId!==l.id}
@@ -108,11 +139,16 @@ export function ModuloScreen({modulo,uid,itens,atualizar,estado}:{
         <Campo nome="Comentário" multiline maxLength={500} value={form.comentario ?? ''} onChangeText={comentario=>alterar({comentario})}/>
       </>}
     </>}
+    {/* accessibilityLiveRegion anuncia mudanças. Salvar respeita ocupado;
+        Cancelar edição só aparece quando existe ID. */}
     {!!aviso && <Text accessibilityLiveRegion="polite">{aviso}</Text>}
     <Botao nome="Salvar" bloqueado={ocupado} acao={gravar}/>
     {id && <Botao secundario nome="Cancelar edição" acao={limpar}/>}
     <Text style={s.titulo}>{modulo}</Text>
     {!lista.length && <Text>Nenhum registro cadastrado.</Text>}
+    {/* LISTA: map cria cartões; key identifica o registro; find recupera título por
+        livroId. ?? usa alternativa se o valor estiver ausente. Editar carrega dados/ID;
+        Excluir abre a confirmação. */}
     {lista.map(item=><View key={item.id} style={s.cartao}>
       <Text style={{fontWeight:'700'}}>{item.titulo ?? livros.find(l=>l.id===item.livroId)?.titulo ?? 'Livro indisponível'}</Text>
       <Text>{item.autor ?? item.data ?? ('Nota '+item.nota+'/5'+(item.comentario?' · '+item.comentario:''))}</Text>

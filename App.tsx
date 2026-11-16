@@ -10,9 +10,17 @@ import { Botao, Campo, s } from './src/interface';
 import { useDiario } from './src/useDiario';
 import type { Modulo } from './src/dados';
 
+/* NAVEGAÇÃO: Stack define as rotas e seus parâmetros. Cadastro recebe o módulo.
+ * modulos fornece as três opções do menu; os tipos ajudam a evitar rotas inválidas.
+ */
 const Stack = createNativeStackNavigator<{ Menu:undefined; Cadastro:{modulo:Modulo} }>();
 const modulos: Modulo[] = ['Livros','Leituras','Avaliações'];
 
+/* ÁREA AUTENTICADA: useDiario compartilha lista, estado e atualização por usuário.
+ * NavigationContainer gerencia navegação; Stack.Navigator organiza telas e
+ * Stack.Screen define rotas. navigate passa modulo para Cadastro; {...diario}
+ * repassa as propriedades do hook. ScrollView permite rolar e Text mostra textos.
+ */
 function Diario({uid}:{uid:string}) {
   const diario = useDiario(uid);
   return <NavigationContainer><Stack.Navigator>
@@ -28,6 +36,10 @@ function Diario({uid}:{uid:string}) {
   </Stack.Navigator></NavigationContainer>;
 }
 
+/* ACESSO: useState mantém campos e mensagens entre renderizações. usuario undefined
+ * indica sessão em consulta; null indica ausência de sessão; User permite acesso.
+ * cadastro alterna login/criação de conta; confirmacao guarda a repetição da senha.
+ */
 function Acesso() {
   const [usuario,setUsuario] = useState<User|null|undefined>(undefined);
   const [email,setEmail] = useState('');
@@ -36,7 +48,14 @@ function Acesso() {
   const [confirmacao,setConfirmacao] = useState('');
   const [erro,setErro] = useState('');
   const [entrando,setEntrando] = useState(false);
+  /* SESSÃO: useEffect inscreve onAuthStateChanged para acompanhar login/logout.
+   * O retorno do listener cancela a inscrição quando o componente é desmontado.
+   */
   useEffect(()=>{ if (firebase) return onAuthStateChanged(firebase.auth,setUsuario); },[]);
+  /* AUTENTICAÇÃO: valida o cadastro e escolhe criar conta ou entrar no Firebase.
+   * await aguarda; catch traduz os códigos de erro; finally libera o botão.
+   * As senhas ficam no formulário e não são gravadas no SQLite nem no Firestore.
+   */
   async function entrar() {
     if (entrando) return;
     if (cadastro && senha.length < 6) return setErro('A senha deve ter pelo menos 6 caracteres.');
@@ -59,6 +78,12 @@ function Acesso() {
         'Falha no acesso. Confira a conta e a configuração do Firebase.');
     } finally { setEntrando(false); }
   }
+  /* INTERFACE: sessão ativa abre Diario; key por UID reinicia a área ao trocar conta.
+   * SafeAreaView respeita áreas do aparelho. Campo encapsula TextInput: value e
+   * onChangeText conectam texto ao estado; secureTextEntry oculta a senha na tela.
+   * <>...</> agrupa elementos sem contêiner extra. Condições exibem os avisos;
+   * bloqueado impede enviar campos vazios ou repetir uma operação em andamento.
+   */
   if (usuario) return <Diario key={usuario.uid} uid={usuario.uid}/>;
   return <SafeAreaView style={{flex:1}}><ScrollView contentContainerStyle={s.pagina} keyboardShouldPersistTaps="handled">
     <Text style={s.titulo}>Diário de Leitura</Text>
@@ -79,4 +104,5 @@ function Acesso() {
       </>}
   </ScrollView></SafeAreaView>;
 }
+/* RAIZ: SafeAreaProvider fornece medidas das áreas seguras aos componentes internos. */
 export default function App() { return <SafeAreaProvider><Acesso/></SafeAreaProvider>; }
